@@ -32,7 +32,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
-  Filter
+  Filter,
+  Calendar
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -346,7 +347,11 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             <div className="space-y-5">
               <div className="flex flex-col gap-2"><label className="text-[11px] font-black text-slate-500 uppercase ml-1">ID Animal</label><input type="text" value={animalNumber} onChange={(e) => setAnimalNumber(formatAnimalNumber(e.target.value))} className="w-full px-5 py-5 rounded-2xl border-2 border-slate-100 focus:border-[#0f3d2e] bg-slate-50 outline-none font-mono text-2xl font-black text-[#0f3d2e]" placeholder="000000-0" /></div>
-              <div className="flex flex-col gap-2"><label className="text-[11px] font-black text-slate-500 uppercase ml-1">Lote / Local</label><select value={corral} onChange={(e) => setCorral(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-slate-100 focus:border-[#0f3d2e] bg-slate-50 outline-none font-bold"><option value="">Selecione...</option>{managedCorrals.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-black text-slate-500 uppercase ml-1 flex items-center gap-1.5"><Calendar className="w-3 h-3" /> Data do Atendimento</label>
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-slate-100 focus:border-[#0f3d2e] bg-slate-50 outline-none font-bold text-slate-700" />
+              </div>
+              <div className="flex flex-col gap-2"><label className="text-[11px] font-black text-slate-500 uppercase ml-1">Lote / Local</label><select value={corral} onChange={(e) => setCorral(e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-slate-100 focus:border-[#0f3d2e] bg-slate-50 outline-none font-bold text-slate-700"><option value="">Selecione...</option>{managedCorrals.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
               <div className="space-y-3 pt-4"><label className="text-[11px] font-black text-slate-500 uppercase ml-1">Diagnósticos</label>{selectedDiseases.map((disease, idx) => (<select key={idx} value={disease} onChange={(e) => handleDiseaseSelection(idx, e.target.value)} className="w-full px-5 py-4 rounded-2xl border-2 border-slate-100 bg-white font-bold text-slate-700"><option value="">{`Doença 0${idx + 1}`}</option>{managedDiseases.map(d => <option key={d.value} value={d.label}>{d.label}</option>)}</select>))}</div>
             </div>
             <div className="space-y-4">
@@ -587,6 +592,7 @@ const App: React.FC = () => {
                 {managedCorrals.map(c => (
                     <div key={c.value} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border-2 border-transparent hover:bg-white transition-all group">
                         <span className="text-xs font-black uppercase">{c.label}</span>
+                        {/* Corrected property access from 'id' to 'value' */}
                         <button onClick={() => { const up = managedCorrals.filter(x => x.value !== c.value); setManagedCorrals(up); persistData('corrals', up); }} className="text-red-300 hover:text-red-600 p-2 opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4"/></button>
                     </div>
                 ))}
