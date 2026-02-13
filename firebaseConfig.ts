@@ -3,7 +3,7 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "SUA_API_KEY_AQUI", // <--- IMPORTANTE: Cole sua chave 'AIza...' aqui dentro das aspas!
+  apiKey: "AIzaSyAsFWNokJfTXd85gi2YPrtNF4MHC6ppb1Q", // <--- IMPORTANTE: Cole sua chave 'AIza...' aqui dentro das aspas!
   authDomain: "boi-medicado.firebaseapp.com",
   projectId: "boi-medicado",
   storageBucket: "boi-medicado.appspot.com",
