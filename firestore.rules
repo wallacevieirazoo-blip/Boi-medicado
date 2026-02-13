@@ -1,0 +1,31 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Auxiliar para verificar se o usuário é o dono do documento ou da mesma unidade
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Regras para Coleção de Usuários
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (request.auth.uid == userId || getUserData().role == 'super_admin');
+    }
+
+    // Regras para Registros, Farmácia e Unidades
+    match /{collectionName}/{docId} {
+      allow read, write: if isSignedIn() && (
+        getUserData().role == 'super_admin' || 
+        getUserData().unitId == resource.data.unitId ||
+        getUserData().unitId == request.resource.data.unitId
+      );
+    }
+  }
+}

@@ -1,7 +1,12 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager 
+} from "firebase/firestore";
 
 // Substitua pelas suas credenciais do console do Firebase
 const firebaseConfig = {
@@ -13,13 +18,20 @@ const firebaseConfig = {
   appId: "SEU_APP_ID"
 };
 
+// Standard initialization
 const app = initializeApp(firebaseConfig);
 
-// Inicializa Firestore com cache persistente para modo offline
-// Isso garante que o componente seja registrado corretamente no container do Firebase App
-const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-});
+// Initialize Firestore with persistent cache if supported
+// Using initializeFirestore allows setting up the cache mechanism
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+} catch (e) {
+  console.warn("Firestore cache initialization failed, falling back to standard initialization", e);
+  db = getFirestore(app);
+}
 
 const auth = getAuth(app);
 

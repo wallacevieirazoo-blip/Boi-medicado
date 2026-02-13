@@ -1,12 +1,14 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { CattleRecord } from "./types";
 
 // Always use named parameter and direct process.env.API_KEY for initialization
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+// Guideline: Create a new GoogleGenAI instance right before making an API call
 export const getTreatmentInsight = async (record: CattleRecord): Promise<string> => {
   if (!process.env.API_KEY) return "Configuração de API pendente.";
 
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const prompt = `
     Analise o seguinte registro de sanidade animal em um confinamento bovino:
     - Doenças Identificadas: ${record.diseases.join(', ')}
@@ -18,12 +20,14 @@ export const getTreatmentInsight = async (record: CattleRecord): Promise<string>
   `;
 
   try {
+    // Guideline: Use 'gemini-3-pro-preview' for complex reasoning tasks like veterinary analysis
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
-        temperature: 0.7,
-        topP: 0.9,
+        // Guideline: Set thinkingBudget for complex reasoning tasks
+        thinkingConfig: { thinkingBudget: 4000 },
+        temperature: 1,
       }
     });
 
