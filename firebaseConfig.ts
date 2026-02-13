@@ -1,15 +1,7 @@
 
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import * as firestore from "firebase/firestore";
-
-// Destructure from firestore namespace to avoid "no exported member" errors in some environments
-const { 
-  getFirestore, 
-  initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager 
-} = firestore as any;
+import firebase from "firebase/app";
+import "firebase/auth";
+import "firebase/firestore";
 
 // Substitua pelas suas credenciais do console do Firebase
 const firebaseConfig = {
@@ -21,21 +13,13 @@ const firebaseConfig = {
   appId: "SEU_APP_ID"
 };
 
-// Standard initialization for Firebase v9+ modular SDK
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase
+// Check if apps are already initialized to avoid duplication on hot reload
+const app = !firebase.apps.length 
+  ? firebase.initializeApp(firebaseConfig) 
+  : firebase.app();
 
-// Initialize Firestore with persistent cache if supported
-let db;
-try {
-  // Using initializeFirestore allows setting up the cache mechanism in modular SDK
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-  });
-} catch (e) {
-  console.warn("Firestore cache initialization failed, falling back to standard initialization", e);
-  db = getFirestore(app);
-}
-
-const auth = getAuth(app);
+const db = app.firestore();
+const auth = app.auth();
 
 export { db, auth };

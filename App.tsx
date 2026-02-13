@@ -16,13 +16,8 @@ import { getTreatmentInsight } from './geminiService';
 
 // Firebase Imports
 import { auth, db } from './firebaseConfig';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import * as firestore from 'firebase/firestore';
-
-// Destructure from firestore namespace to avoid "no exported member" errors in some environments
-const { 
-  collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDoc, setDoc, deleteDoc, orderBy, limit, runTransaction 
-} = firestore as any;
+// Note: Modular imports removed to support v8 namespaced API
+import firebase from 'firebase/app';
 
 // --- COMPONENTE DE MODAL ---
 const ModalShell = ({ title, icon: Icon, onClose, children }: any) => (
@@ -80,27 +75,27 @@ const App: React.FC = () => {
 
   // --- MONITORAMENTO DE AUTH ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
         try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
+          const userDoc = await db.collection("users").doc(firebaseUser.uid).get();
+          if (userDoc.exists) {
             const userData = userDoc.data() as User;
             setCurrentUser({ ...userData, id: firebaseUser.uid });
             
             if (userData.role === 'super_admin') {
               setActiveTab('units');
             } else {
-              const farmDoc = await getDoc(doc(db, "units", userData.unitId));
-              if (farmDoc.exists()) {
-                setFarmConfig({ farmName: farmDoc.data().name, unitId: userData.unitId });
+              const farmDoc = await db.collection("units").doc(userData.unitId).get();
+              if (farmDoc.exists) {
+                setFarmConfig({ farmName: farmDoc.data()!.name, unitId: userData.unitId });
               }
               setActiveTab('register');
             }
           } else {
             setLoginError('Perfil não encontrado no Firestore. Contate o administrador.');
-            await signOut(auth);
+            await auth.signOut();
             setCurrentUser(null);
           }
         } catch (error: any) {
@@ -122,27 +117,26 @@ const App: React.FC = () => {
     if (!currentUser) return;
 
     if (currentUser.role === 'super_admin') {
-      const qUnits = query(collection(db, "units"), orderBy("createdAt", "desc"));
-      const unsubUnits = onSnapshot(qUnits, (snap: any) => {
-        setUnits(snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as FarmUnit)));
+      const qUnits = db.collection("units").orderBy("createdAt", "desc");
+      const unsubUnits = qUnits.onSnapshot((snap) => {
+        setUnits(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FarmUnit)));
       });
       return () => unsubUnits();
     }
 
     if (currentUser.unitId) {
-      const qRecords = query(
-        collection(db, "records"), 
-        where("unitId", "==", currentUser.unitId),
-        orderBy("timestamp", "desc"),
-        limit(100)
-      );
-      const unsubRecords = onSnapshot(qRecords, (snap: any) => {
-        setRecords(snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
+      const qRecords = db.collection("records")
+        .where("unitId", "==", currentUser.unitId)
+        .orderBy("timestamp", "desc")
+        .limit(100);
+        
+      const unsubRecords = qRecords.onSnapshot((snap) => {
+        setRecords(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
       });
 
-      const qPharmacy = query(collection(db, "pharmacy"), where("unitId", "==", currentUser.unitId));
-      const unsubPharmacy = onSnapshot(qPharmacy, (snap: any) => {
-        const data = snap.docs.map((doc: any) => ({ ...doc.data() } as MedicineOption));
+      const qPharmacy = db.collection("pharmacy").where("unitId", "==", currentUser.unitId);
+      const unsubPharmacy = qPharmacy.onSnapshot((snap) => {
+        const data = snap.docs.map((doc) => ({ ...doc.data() } as MedicineOption));
         setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
       });
 
@@ -155,7 +149,7 @@ const App: React.FC = () => {
     setLoginError('');
     setActionLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      await auth.signInWithEmailAndPassword(loginEmail, loginPassword);
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -168,7 +162,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => auth.signOut();
 
   const handleRegisterTreatment = async () => {
     if (!currentUser || !farmConfig) return;
@@ -183,21 +177,26 @@ const App: React.FC = () => {
     try {
       let finalRecord: CattleRecord | null = null;
 
-      await runTransaction(db, async (transaction: any) => {
+      await db.runTransaction(async (transaction) => {
         const medEntries: MedicationEntry[] = [];
         for (const m of validMeds) {
           const medObj = pharmacyMedicines.find(p => p.label === m.medicine);
           if (!medObj) throw new Error(`Medicamento ${m.medicine} não encontrado.`);
-          const medRef = doc(db, "pharmacy", medObj.value);
+          
+          const medRef = db.collection("pharmacy").doc(medObj.value);
           const medSnap = await transaction.get(medRef);
-          if (!medSnap.exists()) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
-          const currentStock = medSnap.data().stockML;
+          
+          if (!medSnap.exists) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
+          
+          const currentStock = medSnap.data()!.stockML;
           const dose = parseFloat(m.dosage);
           if (currentStock < dose) throw new Error(`Estoque insuficiente de ${m.medicine}.`);
+          
           transaction.update(medRef, { stockML: currentStock - dose });
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
-        const recordRef = doc(collection(db, "records"));
+        
+        const recordRef = db.collection("records").doc();
         const recordData = {
           animalNumber, date, corral, diseases: [selectedDisease],
           medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
