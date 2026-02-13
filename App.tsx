@@ -1,22 +1,21 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  CattleRecord, MedicationEntry, MedicineOption, DiseaseOption, 
-  CorralOption, Treatment, User, FarmConfig, FarmUnit, UserRole, RecordType
+  CattleRecord, MedicationEntry, MedicineOption, 
+  FarmConfig, FarmUnit, RecordType, User 
 } from './types';
 import { 
   DISEASES as DEFAULT_DISEASES, MEDICINES as DEFAULT_MEDICINES, 
   CORRALS as DEFAULT_CORRALS 
 } from './constants';
 import { 
-  ClipboardCheck, X, Plus, Activity, LogOut, UserCircle, Users, 
-  Skull, CheckCircle2, Building2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine, Utensils, Undo2, Loader2, ShieldCheck, Map, AlertTriangle, BrainCircuit
+  ClipboardCheck, X, Plus, LogOut, 
+  Skull, CheckCircle2, Building2, Package, BarChart3, 
+  Calendar, Undo2, Loader2, ShieldCheck, Map, AlertTriangle
 } from 'lucide-react';
-import { getTreatmentInsight } from './geminiService';
 
-// Firebase Imports
+// --- IMPORTAÇÕES DO FIREBASE CORRIGIDAS (V8/COMPAT NAMESPACED) ---
 import { auth, db } from './firebaseConfig';
-// Note: Modular imports removed to support v8 namespaced API
 import firebase from 'firebase/app';
 
 // --- COMPONENTE DE MODAL ---
@@ -50,7 +49,6 @@ const App: React.FC = () => {
   const [pharmacyMedicines, setPharmacyMedicines] = useState<MedicineOption[]>([]);
   const [farmConfig, setFarmConfig] = useState<FarmConfig | null>(null);
   const [units, setUnits] = useState<FarmUnit[]>([]);
-  const [lastInsight, setLastInsight] = useState<string | null>(null);
 
   // --- UI STATE ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'register' | 'units'>('register');
@@ -61,25 +59,26 @@ const App: React.FC = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [corral, setCorral] = useState('');
   const [selectedDisease, setSelectedDisease] = useState('');
-  // Corrected initialization to avoid shared object references
+  
   const [medications, setMedications] = useState<{medicine: string, dosage: string}[]>(
     Array.from({ length: 6 }, () => ({ medicine: '', dosage: '' }))
   );
 
   // Verificação de configuração inicial
   useEffect(() => {
-    // @ts-ignore - Acesso às configurações brutas para verificação
+    // @ts-ignore
     const isPlaceholder = auth.app.options.apiKey === "SUA_API_KEY_AQUI";
     if (isPlaceholder) setConfigError(true);
   }, []);
 
-  // --- MONITORAMENTO DE AUTH ---
+  // --- MONITORAMENTO DE AUTH (Sintaxe Namespaced) ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
         try {
           const userDoc = await db.collection("users").doc(firebaseUser.uid).get();
+          
           if (userDoc.exists) {
             const userData = userDoc.data() as User;
             setCurrentUser({ ...userData, id: firebaseUser.uid });
@@ -89,18 +88,19 @@ const App: React.FC = () => {
             } else {
               const farmDoc = await db.collection("units").doc(userData.unitId).get();
               if (farmDoc.exists) {
-                setFarmConfig({ farmName: farmDoc.data()!.name, unitId: userData.unitId });
+                // @ts-ignore
+                setFarmConfig({ farmName: farmDoc.data().name, unitId: userData.unitId });
               }
               setActiveTab('register');
             }
           } else {
-            setLoginError('Perfil não encontrado no Firestore. Contate o administrador.');
+            setLoginError('Perfil não encontrado no Firestore.');
             await auth.signOut();
             setCurrentUser(null);
           }
         } catch (error: any) {
           console.error("Erro ao buscar perfil:", error);
-          setLoginError(`Erro de conexão com o banco de dados: ${error.message}`);
+          setLoginError(`Erro de conexão: ${error.message}`);
           setCurrentUser(null);
         }
       } else {
@@ -112,33 +112,32 @@ const App: React.FC = () => {
     return unsubscribe;
   }, []);
 
-  // --- SINCRONIZAÇÃO EM TEMPO REAL ---
+  // --- SINCRONIZAÇÃO EM TEMPO REAL (Sintaxe Namespaced) ---
   useEffect(() => {
     if (!currentUser) return;
 
     if (currentUser.role === 'super_admin') {
-      const qUnits = db.collection("units").orderBy("createdAt", "desc");
-      const unsubUnits = qUnits.onSnapshot((snap) => {
+      const unsubUnits = db.collection("units").orderBy("createdAt", "desc").onSnapshot((snap) => {
         setUnits(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FarmUnit)));
       });
       return () => unsubUnits();
     }
 
     if (currentUser.unitId) {
-      const qRecords = db.collection("records")
+      const unsubRecords = db.collection("records")
         .where("unitId", "==", currentUser.unitId)
         .orderBy("timestamp", "desc")
-        .limit(100);
-        
-      const unsubRecords = qRecords.onSnapshot((snap) => {
-        setRecords(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
-      });
+        .limit(100)
+        .onSnapshot((snap) => {
+          setRecords(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
+        });
 
-      const qPharmacy = db.collection("pharmacy").where("unitId", "==", currentUser.unitId);
-      const unsubPharmacy = qPharmacy.onSnapshot((snap) => {
-        const data = snap.docs.map((doc) => ({ ...doc.data() } as MedicineOption));
-        setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
-      });
+      const unsubPharmacy = db.collection("pharmacy")
+        .where("unitId", "==", currentUser.unitId)
+        .onSnapshot((snap) => {
+          const data = snap.docs.map((doc) => ({ ...doc.data() } as MedicineOption));
+          setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
+        });
 
       return () => { unsubRecords(); unsubPharmacy(); };
     }
@@ -175,8 +174,6 @@ const App: React.FC = () => {
 
     setActionLoading(true);
     try {
-      let finalRecord: CattleRecord | null = null;
-
       await db.runTransaction(async (transaction) => {
         const medEntries: MedicationEntry[] = [];
         for (const m of validMeds) {
@@ -188,7 +185,8 @@ const App: React.FC = () => {
           
           if (!medSnap.exists) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
           
-          const currentStock = medSnap.data()!.stockML;
+          // @ts-ignore
+          const currentStock = medSnap.data().stockML;
           const dose = parseFloat(m.dosage);
           if (currentStock < dose) throw new Error(`Estoque insuficiente de ${m.medicine}.`);
           
@@ -196,25 +194,19 @@ const App: React.FC = () => {
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
         
+        // Cria referência para novo documento
         const recordRef = db.collection("records").doc();
         const recordData = {
           animalNumber, date, corral, diseases: [selectedDisease],
           medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
           type: 'treatment' as RecordType, unitId: currentUser.unitId
         };
+        
         transaction.set(recordRef, recordData);
-        finalRecord = { ...recordData, id: recordRef.id, synced: true } as CattleRecord;
       });
 
-      alert('Registro salvo!');
+      alert('Registro salvo com sucesso!');
       
-      // Call Gemini for veterinary insight after successful save
-      if (finalRecord) {
-        setLastInsight("Analisando tratamento com IA...");
-        const insight = await getTreatmentInsight(finalRecord);
-        setLastInsight(insight);
-      }
-
       setAnimalNumber('');
       setMedications(Array.from({ length: 6 }, () => ({ medicine: '', dosage: '' })));
       setSelectedDisease('');
@@ -305,14 +297,14 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-2">
            <div className="hidden md:flex bg-slate-100 p-1 rounded-2xl">
-              {currentUser.role === 'super_admin' ? (
-                <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
-              ) : (
-                <>
-                  <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
-                  <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
-                </>
-              )}
+             {currentUser.role === 'super_admin' ? (
+               <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
+             ) : (
+               <>
+                 <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
+                 <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
+               </>
+             )}
            </div>
            <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"><LogOut className="w-5 h-5" /></button>
         </div>
@@ -384,8 +376,8 @@ const App: React.FC = () => {
                  <div className="space-y-4">
                     {pharmacyMedicines.slice(0, 5).map(m => (
                       <div key={m.value} className="flex justify-between items-center border-b border-white/10 pb-2">
-                         <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
-                         <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
+                          <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
+                          <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
                       </div>
                     ))}
                     <button onClick={() => setShowPharmacyManager(true)} className="w-full py-3 bg-white/10 rounded-xl text-[9px] font-black uppercase hover:bg-white/20 transition-all">Ver Inventário Completo</button>
@@ -424,16 +416,6 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            {lastInsight && (
-              <div className="mt-8 p-6 bg-indigo-50 rounded-[2rem] border border-indigo-100 flex gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="p-3 bg-white rounded-2xl h-fit text-indigo-600 shadow-sm"><BrainCircuit className="w-6 h-6" /></div>
-                <div>
-                  <h4 className="text-[10px] font-black uppercase text-indigo-400 mb-1 tracking-widest">IA Veterinária Gemini 3</h4>
-                  <p className="text-sm font-bold text-indigo-900 leading-relaxed italic">"{lastInsight}"</p>
-                </div>
-              </div>
-            )}
 
             <div className="mt-8 pt-6 border-t">
               <button disabled={actionLoading} onClick={handleRegisterTreatment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-sm shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">

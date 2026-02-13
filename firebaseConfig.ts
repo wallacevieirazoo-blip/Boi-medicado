@@ -13,13 +13,12 @@ const firebaseConfig = {
   appId: "SEU_APP_ID"
 };
 
-// Initialize Firebase
-// Check if apps are already initialized to avoid duplication on hot reload
-const app = !firebase.apps.length 
-  ? firebase.initializeApp(firebaseConfig) 
-  : firebase.app();
+// Initialize Firebase (Namespaced/Compat SDK)
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 
-const db = app.firestore();
-const auth = app.auth();
+const db = firebase.firestore();
+const auth = firebase.auth();
 
 export { db, auth };
