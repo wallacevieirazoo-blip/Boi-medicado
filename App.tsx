@@ -8,15 +8,14 @@ import {
   DISEASES as DEFAULT_DISEASES, MEDICINES as DEFAULT_MEDICINES, 
   CORRALS as DEFAULT_CORRALS, AUTHORIZED_USERS as DEFAULT_USERS 
 } from './constants';
-import { getTreatmentInsight } from './geminiService';
 import { 
   ClipboardCheck, RefreshCcw, X, Plus, 
   Activity, LogOut, UserCircle, Users, 
-  Skull, CheckCircle2, Building2, ShieldCheck, KeyRound, 
+  Skull, CheckCircle2, Building2, KeyRound, 
   Utensils, Undo2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine
 } from 'lucide-react';
 
-// COMPONENTE MOVIDO PARA FORA PARA EVITAR PERDA DE FOCO
+// --- COMPONENTE DE MODAL (FORA DO APP PARA NÃO PERDER FOCO) ---
 const ModalShell = ({ title, icon: Icon, onClose, children }: any) => (
   <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md">
     <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl flex flex-col max-h-[90vh]">
@@ -56,13 +55,13 @@ const App: React.FC = () => {
   const [managedDiseases, setManagedDiseases] = useState<DiseaseOption[]>([]);
   const [managedCorrals, setManagedCorrals] = useState<CorralOption[]>([]);
 
-  // --- UI ---
+  // --- UI TABS & MODALS ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'register' | 'units'>('register');
   const [showPharmacyManager, setShowPharmacyManager] = useState(false);
   const [showMovementModal, setShowMovementModal] = useState<{show: boolean, type: RecordType | null}>({show: false, type: null});
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
 
-  // --- FORM ---
+  // --- REGISTRATION FORM ---
   const [animalNumber, setAnimalNumber] = useState('');
   const [movementQty, setMovementQty] = useState<number>(1);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -70,12 +69,12 @@ const App: React.FC = () => {
   const [selectedDiseases, setSelectedDiseases] = useState(['', '']);
   const [medications, setMedications] = useState<{medicine: string, dosage: string}[]>(Array(6).fill({ medicine: '', dosage: '' }));
 
-  // --- PHARMACY ---
+  // --- PHARMACY FORM ---
   const [newMedName, setNewMedName] = useState('');
   const [newMedStock, setNewMedStock] = useState<number>(0);
   const [newMedPrice, setNewMedPrice] = useState<number>(0);
 
-  // --- PERSISTENCE ---
+  // --- HELPERS & DATA PERSISTENCE ---
   const loadGlobal = (key: string, def: any) => {
     const data = localStorage.getItem(`bm_global_${key}`);
     return data ? JSON.parse(data) : def;
@@ -153,7 +152,7 @@ const App: React.FC = () => {
     if (user) {
       const unit = globalUnits.find(u => u.id === user.unitId);
       if (!unit || !unit.active || Date.now() > unit.expiresAt) {
-        setLoginError('Acesso Bloqueado: Verifique sua licença.');
+        setLoginError('Acesso Bloqueado: Licença pendente.');
         return;
       }
       const { password: _, ...sessionUser } = user;
@@ -162,7 +161,7 @@ const App: React.FC = () => {
       loadUnitData(user.unitId, unit.name);
       setActiveTab(user.role === 'manager' ? 'dashboard' : 'register');
       setLoginError('');
-    } else setLoginError('Usuário ou Senha inválidos.');
+    } else setLoginError('Credenciais incorretas.');
   };
 
   const handleLogout = () => {
@@ -178,7 +177,7 @@ const App: React.FC = () => {
     setGlobalUnits(updated);
     persistGlobal('units', updated);
     setShowUnitCreator(false);
-    alert(`Unidade Criada: ${unitId}`);
+    alert(`Fazenda Licenciada: ${unitId}`);
   };
 
   const handleAddUser = () => {
@@ -189,7 +188,7 @@ const App: React.FC = () => {
     persistGlobal('users', updated);
     setIsAddingUser(false);
     setNewUser({ name: '', username: '', password: '', role: 'operator' });
-    alert('Usuário criado com sucesso!');
+    alert('Usuário cadastrado!');
   };
 
   const handleUpdatePassword = (userId: string) => {
@@ -198,11 +197,11 @@ const App: React.FC = () => {
     persistGlobal('users', updated);
     setEditingUserId(null);
     setTempPassword('');
-    alert('Senha atualizada com sucesso!');
+    alert('Senha alterada!');
   };
 
   const handleRegisterTreatment = async () => {
-    if (!animalNumber || !corral) return alert('Brinco e Curral são obrigatórios');
+    if (!animalNumber || !corral) return alert('Brinco e Curral são necessários');
     const medEntries: MedicationEntry[] = [];
     const updatedPharmacy = [...pharmacyMedicines];
     for (const m of medications) {
@@ -210,7 +209,7 @@ const App: React.FC = () => {
         const dose = parseFloat(m.dosage);
         const medObj = updatedPharmacy.find(p => p.label === m.medicine);
         if (medObj) {
-          if (medObj.stockML < dose) return alert(`Estoque insuficiente de ${m.medicine}`);
+          if (medObj.stockML < dose) return alert(`Sem estoque de ${m.medicine}`);
           medObj.stockML -= dose;
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * medObj.pricePerML });
         }
@@ -222,7 +221,7 @@ const App: React.FC = () => {
     setPharmacyMedicines(updatedPharmacy);
     persistUnitData('records', upRecords);
     persistUnitData('pharmacy', updatedPharmacy);
-    alert(`Registro salvo!`);
+    alert(`Tratamento salvo com sucesso.`);
     setAnimalNumber('');
     setMedications(Array(6).fill({ medicine: '', dosage: '' }));
   };
@@ -261,13 +260,13 @@ const App: React.FC = () => {
           <div className="text-center mb-10">
             <div className="inline-block p-5 bg-emerald-50 rounded-[2rem] mb-4"><Building2 className="w-12 h-12 text-emerald-600" /></div>
             <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter leading-none">Boi Medicado</h1>
-            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Suporte & Gestão Bovina</p>
+            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Tecnologia para o Campo</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <input type="text" value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="Usuário" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none" />
             <input type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Senha" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none" />
-            {loginError && <p className="text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-xl border border-red-100">{loginError}</p>}
-            <button className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Entrar</button>
+            {loginError && <p className="text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-xl">{loginError}</p>}
+            <button className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl">Acessar Sistema</button>
           </form>
         </div>
       </div>
@@ -280,79 +279,66 @@ const App: React.FC = () => {
         <header className="max-w-7xl mx-auto flex justify-between items-center mb-12 bg-white p-8 rounded-[3rem] shadow-xl">
            <div className="flex items-center gap-4">
               <Globe className="w-8 h-8 text-blue-600" />
-              <h1 className="text-2xl font-black uppercase text-slate-800 tracking-tighter">Painel de Suporte</h1>
+              <h1 className="text-2xl font-black uppercase text-slate-800 tracking-tighter">Central de Suporte</h1>
            </div>
-           <button onClick={handleLogout} className="p-4 bg-red-50 text-red-500 rounded-full hover:bg-red-100"><LogOut /></button>
+           <button onClick={handleLogout} className="p-4 bg-red-50 text-red-500 rounded-full"><LogOut /></button>
         </header>
 
         <main className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-           <button onClick={() => setShowUnitCreator(true)} className="aspect-video bg-white border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center hover:border-blue-500 hover:text-blue-500 transition-all text-slate-300">
-              <Plus className="w-12 h-12 mb-4" />
-              <span className="font-black uppercase tracking-widest text-[10px]">Nova Licença</span>
+           <button onClick={() => setShowUnitCreator(true)} className="aspect-video bg-white border-4 border-dashed border-slate-200 rounded-[3rem] flex flex-col items-center justify-center hover:border-blue-500 hover:text-blue-500 transition-all text-slate-300 group">
+              <Plus className="w-12 h-12 mb-4 group-hover:scale-110 transition-transform" />
+              <span className="font-black uppercase tracking-widest text-[10px]">Ativar Nova Unidade</span>
            </button>
 
-           {globalUnits.map(unit => {
-             const daysLeft = getDaysRemaining(unit.expiresAt);
-             return (
-               <div key={unit.id} className="bg-white p-8 rounded-[3rem] shadow-lg border border-slate-100 flex flex-col justify-between group">
-                  <div>
-                    <div className="flex justify-between items-start mb-6">
-                      <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:bg-blue-600 group-hover:text-white transition-all"><Building2 /></div>
-                      <div className={`px-4 py-1 rounded-full text-[9px] font-black uppercase ${daysLeft > 15 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                        {daysLeft === 0 ? 'ATIVA' : 'ATIVA'}
-                      </div>
-                    </div>
-                    <h3 className="text-xl font-black text-slate-800 uppercase mb-2 truncate">{unit.name}</h3>
-                    <div className="flex items-center gap-2 text-[10px] font-mono font-bold text-slate-400 bg-slate-50 p-2 rounded-xl border">
-                       ID: {unit.id}
-                    </div>
+           {globalUnits.map(unit => (
+             <div key={unit.id} className="bg-white p-8 rounded-[3rem] shadow-lg border border-slate-100 flex flex-col justify-between group">
+                <div>
+                  <div className="flex justify-between items-start mb-6">
+                    <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:bg-blue-600 group-hover:text-white transition-all"><Building2 /></div>
+                    <div className="px-4 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-600">ATIVA</div>
                   </div>
-                  <div className="mt-8 flex gap-2">
-                     <button onClick={() => setSelectedUnitForUsers(unit)} className="flex-grow py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[12px] tracking-widest">GERENCIAR USUÁRIOS</button>
-                     <button className="p-4 bg-slate-100 text-slate-500 rounded-2xl"><Settings className="w-5 h-5" /></button>
-                  </div>
-               </div>
-             );
-           })}
+                  <h3 className="text-xl font-black text-slate-800 uppercase mb-2 truncate">{unit.name}</h3>
+                  <div className="text-[11px] font-mono font-bold text-slate-400">ID: {unit.id}</div>
+                </div>
+                <div className="mt-8 flex gap-2">
+                   <button onClick={() => setSelectedUnitForUsers(unit)} className="flex-grow py-5 bg-[#1e293b] text-white rounded-2xl font-black uppercase text-[12px] tracking-widest hover:bg-slate-800 transition-all">GERENCIAR USUÁRIOS</button>
+                   <button className="p-5 bg-slate-100 text-slate-500 rounded-2xl"><Settings className="w-5 h-5" /></button>
+                </div>
+             </div>
+           ))}
         </main>
 
         {showUnitCreator && (
-          <ModalShell title="Licenciar Fazenda" icon={Building2} onClose={() => setShowUnitCreator(false)}>
+          <ModalShell title="Nova Unidade" icon={Building2} onClose={() => setShowUnitCreator(false)}>
              <div className="space-y-6">
-                <input id="unitNameInput" type="text" placeholder="Nome da Fazenda" className="w-full p-6 bg-slate-50 rounded-3xl font-bold border-none outline-none focus:ring-2 focus:ring-blue-500" />
-                <select id="unitDaysInput" className="w-full p-6 bg-slate-50 rounded-3xl font-bold border-none outline-none">
-                     <option value="30">30 Dias</option>
-                     <option value="180">180 Dias</option>
-                     <option value="365">365 Dias</option>
-                </select>
+                <input id="unitNameInput" type="text" placeholder="Nome da Fazenda" className="w-full p-6 bg-slate-50 rounded-3xl font-bold outline-none" />
                 <button onClick={() => {
                   const input = document.getElementById('unitNameInput') as HTMLInputElement;
-                  const days = document.getElementById('unitDaysInput') as HTMLSelectElement;
-                  if(input.value) handleCreateUnit(input.value, parseInt(days.value));
-                }} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase tracking-widest shadow-xl">Gerar ID e Ativar</button>
+                  if(input.value) handleCreateUnit(input.value, 365);
+                }} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase">Ativar Licença</button>
              </div>
           </ModalShell>
         )}
 
         {selectedUnitForUsers && (
-          <ModalShell title={`Suporte: ${selectedUnitForUsers.name}`} icon={Users} onClose={() => setSelectedUnitForUsers(null)}>
+          <ModalShell title={`Usuários: ${selectedUnitForUsers.name}`} icon={Users} onClose={() => setSelectedUnitForUsers(null)}>
              <div className="space-y-4">
-                <button onClick={() => setIsAddingUser(!isAddingUser)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black uppercase text-slate-400 hover:border-blue-500 hover:text-blue-500">
-                  {isAddingUser ? 'Cancelar' : '+ Novo Usuário para esta Unidade'}
+                <button onClick={() => setIsAddingUser(!isAddingUser)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[11px] font-black uppercase text-slate-400">
+                  {isAddingUser ? 'Cancelar' : '+ Novo Cadastro de Acesso'}
                 </button>
 
                 {isAddingUser && (
                   <div className="p-6 bg-blue-50 rounded-[2rem] space-y-4 border border-blue-100">
-                    <input type="text" placeholder="Nome Completo" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full p-4 bg-white rounded-xl text-xs font-bold" />
+                    <input type="text" placeholder="Nome" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full p-4 bg-white rounded-xl text-xs font-bold" />
                     <div className="grid grid-cols-2 gap-4">
                       <input type="text" placeholder="Login" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} className="w-full p-4 bg-white rounded-xl text-xs font-bold" />
-                      <input type="text" placeholder="Senha Inicial" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full p-4 bg-white rounded-xl text-xs font-bold" />
+                      <input type="text" placeholder="Senha" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full p-4 bg-white rounded-xl text-xs font-bold" />
                     </div>
                     <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})} className="w-full p-4 bg-white rounded-xl text-xs font-bold">
                        <option value="operator">Operador</option>
                        <option value="manager">Gerente</option>
                     </select>
-                    <button onClick={handleAddUser} className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px]">Salvar Novo Acesso</button>
+                    <button onClick={handleAddUser} className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-[11px]">Salvar Usuário</button>
                   </div>
                 )}
 
@@ -360,20 +346,20 @@ const App: React.FC = () => {
                   <div key={user.id} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] flex flex-col gap-4">
                      <div className="flex justify-between items-center">
                         <div className="flex items-center gap-4">
-                           <div className={`p-3 rounded-2xl ${user.role === 'manager' ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}><UserCircle className="w-5 h-5" /></div>
+                           <div className="p-3 bg-white rounded-2xl shadow-sm"><UserCircle className="w-5 h-5 text-slate-400" /></div>
                            <div>
                               <h4 className="text-sm font-black text-slate-800 uppercase leading-none mb-1">{user.name}</h4>
                               <span className="text-[7px] font-black uppercase bg-white px-2 py-0.5 rounded-full border">{user.role}</span>
                            </div>
                         </div>
                      </div>
-                     <div className="grid grid-cols-2 gap-4 border-t pt-4 border-slate-200/50">
+                     <div className="grid grid-cols-2 gap-4 border-t pt-4">
                         <div>
-                           <label className="text-[7px] font-black uppercase text-slate-400 block mb-1">Login</label>
+                           <label className="text-[7px] font-black text-slate-400 uppercase block mb-1">Usuário</label>
                            <div className="p-3 bg-white rounded-xl text-xs font-mono font-bold text-slate-700 border">{user.username}</div>
                         </div>
                         <div>
-                           <label className="text-[7px] font-black uppercase text-slate-400 block mb-1">Senha de Suporte</label>
+                           <label className="text-[7px] font-black text-slate-400 uppercase block mb-1">Senha de Suporte</label>
                            {editingUserId === user.id ? (
                              <div className="flex gap-2">
                                <input type="text" value={tempPassword} onChange={e => setTempPassword(e.target.value)} className="flex-grow p-3 bg-white rounded-xl text-xs font-mono font-bold border border-blue-500 outline-none" />
@@ -405,7 +391,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4 md:p-8">
       <header className="w-full max-w-7xl mb-6 flex items-center justify-between bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-100">
         <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500 rounded-2xl text-white shadow-lg"><Building2 className="w-6 h-6" /></div>
+          <div className="p-3 bg-emerald-500 rounded-2xl text-white"><Building2 className="w-6 h-6" /></div>
           <div>
             <h1 className="text-xl font-black text-slate-800 uppercase leading-none truncate max-w-[200px]">{farmConfig?.farmName}</h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">ID: <span className="text-emerald-600 font-black">{farmConfig?.unitId}</span></p>
@@ -425,7 +411,7 @@ const App: React.FC = () => {
       {activeTab === 'dashboard' ? (
         <main className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-8">
            <div className="lg:col-span-9 bg-white rounded-[3rem] shadow-2xl p-8 border border-slate-100 overflow-x-auto">
-             <div className="flex items-center gap-3 mb-8"><BarChart3 className="w-6 h-6 text-emerald-600" /><h2 className="text-xl font-black text-slate-800 uppercase leading-none">Visão da Unidade</h2></div>
+             <div className="flex items-center gap-3 mb-8"><BarChart3 className="w-6 h-6 text-emerald-600" /><h2 className="text-xl font-black text-slate-800 uppercase leading-none">Status Unidade</h2></div>
              <table className="w-full min-w-[800px] text-left border-collapse">
                <thead className="bg-[#4472c4] text-white">
                  <tr>
@@ -453,7 +439,7 @@ const App: React.FC = () => {
            </div>
            <div className="lg:col-span-3 space-y-6">
               <div className="bg-slate-900 text-white rounded-[3rem] p-8 shadow-2xl">
-                 <h3 className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-6">Insumos</h3>
+                 <h3 className="text-[10px] font-black uppercase opacity-40 mb-6">Insumos</h3>
                  <div className="space-y-4">
                     {pharmacyMedicines.slice(0, 4).map(m => (
                       <div key={m.value} className="flex justify-between items-center border-b border-white/10 pb-2">
@@ -461,19 +447,19 @@ const App: React.FC = () => {
                          <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
                       </div>
                     ))}
-                    <button onClick={() => setShowPharmacyManager(true)} className="w-full py-3 bg-white/10 rounded-xl text-[9px] font-black uppercase">Farmácia</button>
+                    <button onClick={() => setShowPharmacyManager(true)} className="w-full py-3 bg-white/10 rounded-xl text-[9px] font-black uppercase">Gerenciar Farmácia</button>
                  </div>
               </div>
               <div className="grid grid-cols-1 gap-4">
-                 <button onClick={() => setShowMovementModal({show: true, type: 'entry'})} className="flex items-center gap-4 p-6 bg-white rounded-3xl shadow-sm border border-slate-100 font-black uppercase text-[10px] text-slate-800"><ArrowDownToLine className="text-blue-500" /> Entrada</button>
-                 <button onClick={() => setShowMovementModal({show: true, type: 'slaughter'})} className="flex items-center gap-4 p-6 bg-white rounded-3xl shadow-sm border border-slate-100 font-black uppercase text-[10px] text-slate-800"><Utensils className="text-red-500" /> Abate</button>
+                 <button onClick={() => setShowMovementModal({show: true, type: 'entry'})} className="flex items-center gap-4 p-6 bg-white rounded-3xl shadow-sm border font-black uppercase text-[10px] text-slate-800"><ArrowDownToLine className="text-blue-500" /> Registrar Entrada</button>
+                 <button onClick={() => setShowMovementModal({show: true, type: 'slaughter'})} className="flex items-center gap-4 p-6 bg-white rounded-3xl shadow-sm border font-black uppercase text-[10px] text-slate-800"><Utensils className="text-red-500" /> Registrar Abate</button>
               </div>
            </div>
         </main>
       ) : (
         <main className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-8">
           <section className="lg:col-span-8 bg-white rounded-[3rem] shadow-2xl p-8 border border-slate-100">
-            <div className="flex items-center gap-3 mb-10 border-b pb-6"><ClipboardCheck className="w-6 h-6 text-emerald-600" /><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-none">Sanidade do Animal</h2></div>
+            <div className="flex items-center gap-3 mb-10 border-b pb-6"><ClipboardCheck className="w-6 h-6 text-emerald-600" /><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter leading-none">Ficha Sanitária Animal</h2></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
@@ -481,30 +467,31 @@ const App: React.FC = () => {
                   <div className="space-y-2"><label className="text-[11px] font-black text-slate-400 uppercase">Brinco</label><input type="text" value={animalNumber} onChange={handleAnimalNumberChange} placeholder="000000-0" className="w-full px-4 py-4 rounded-2xl bg-slate-50 border-none text-2xl font-black text-emerald-700 outline-none" /></div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-400 uppercase">Curral</label>
+                  <label className="text-[11px] font-black text-slate-400 uppercase">Curral / Lote</label>
                   <select value={corral} onChange={e => setCorral(e.target.value)} className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none font-bold text-slate-600"><option value="">Selecionar...</option>{managedCorrals.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-400 uppercase">Doença</label>
+                  <label className="text-[11px] font-black text-slate-400 uppercase">Causa Provável</label>
                   <select value={selectedDiseases[0]} onChange={e => setSelectedDiseases([e.target.value, selectedDiseases[1]])} className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-none font-bold text-slate-700"><option value="">Selecione...</option>{managedDiseases.map(d => <option key={d.value} value={d.label}>{d.label}</option>)}</select>
                 </div>
               </div>
               <div className="space-y-4">
-                <label className="text-[11px] font-black text-slate-400 uppercase">Medicamentos</label>
+                <label className="text-[11px] font-black text-slate-400 uppercase">Medicamentos Aplicados</label>
                 <div className="space-y-2">
                   {medications.map((med, idx) => (
                     <div key={idx} className="flex gap-2">
-                      <select value={med.medicine} onChange={e => { const up = [...medications]; up[idx].medicine = e.target.value; setMedications(up); }} className="flex-grow px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold border-none outline-none"><option value="">Item</option>{pharmacyMedicines.map(m => <option key={m.value} value={m.label}>{m.label}</option>)}</select>
+                      <select value={med.medicine} onChange={e => { const up = [...medications]; up[idx].medicine = e.target.value; setMedications(up); }} className="flex-grow px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold border-none outline-none"><option value="">Remédio</option>{pharmacyMedicines.map(m => <option key={m.value} value={m.label}>{m.label}</option>)}</select>
                       <input type="text" placeholder="mL" value={med.dosage} onChange={e => { const up = [...medications]; up[idx].dosage = e.target.value; setMedications(up); }} className="w-16 px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold text-center border-none outline-none" />
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-            <div className="mt-8 pt-6 border-t flex gap-4">
-              <button onClick={handleRegisterTreatment} className="flex-grow py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-sm shadow-xl hover:bg-emerald-700 transition-all">Salvar Ficha Animal</button>
+            <div className="mt-8 pt-6 border-t">
+              <button onClick={handleRegisterTreatment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-sm shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3"><CheckCircle2 className="w-6 h-6" /> Salvar Registro Sanitário</button>
             </div>
           </section>
+          
           <aside className="lg:col-span-4 space-y-6">
             <div className="bg-slate-900 text-white rounded-[3rem] p-8 shadow-2xl space-y-4">
                <h3 className="text-xs font-black opacity-40 uppercase tracking-widest mb-2">Mortalidade / Saída</h3>
@@ -515,8 +502,8 @@ const App: React.FC = () => {
                <div className="flex items-center gap-4 text-emerald-600">
                   <div className="p-3 bg-emerald-50 rounded-2xl"><Calendar className="w-6 h-6" /></div>
                   <div>
-                    <span className="font-black uppercase tracking-tighter text-sm block leading-none">{getDaysRemaining(globalUnits.find(u => u.id === currentUser.unitId)?.expiresAt || 0)} Dias</span>
-                    <span className="text-[8px] font-black uppercase text-slate-400">Licença Válida</span>
+                    <span className="font-black uppercase tracking-tighter text-sm block leading-none">Sistema Ativo</span>
+                    <span className="text-[8px] font-black uppercase text-slate-400">Licença Premium</span>
                   </div>
                </div>
             </div>
@@ -525,7 +512,7 @@ const App: React.FC = () => {
       )}
 
       {showMovementModal.show && (
-        <ModalShell title={`Movimento: ${showMovementModal.type}`} icon={Activity} onClose={() => setShowMovementModal({show: false, type: null})}>
+        <ModalShell title={`Movimento: ${showMovementModal.type?.replace('_', ' ')}`} icon={Activity} onClose={() => setShowMovementModal({show: false, type: null})}>
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase block">Data</label><input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl font-bold border outline-none" /></div>
@@ -537,13 +524,13 @@ const App: React.FC = () => {
       )}
 
       {showPharmacyManager && (
-        <ModalShell title="Estoque de Remédios" icon={Package} onClose={() => setShowPharmacyManager(false)}>
+        <ModalShell title="Insumos e Medicamentos" icon={Package} onClose={() => setShowPharmacyManager(false)}>
            <div className="space-y-8">
               <div className="bg-slate-50 p-6 rounded-[2.5rem] space-y-4 border">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <input type="text" value={newMedName} onChange={e => setNewMedName(e.target.value)} placeholder="Nome" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
-                  <input type="number" value={newMedStock} onChange={e => setNewMedStock(Number(e.target.value))} placeholder="Qtd mL" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
-                  <input type="number" value={newMedPrice} onChange={e => setNewMedPrice(Number(e.target.value))} placeholder="R$/mL" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
+                  <input type="text" value={newMedName} onChange={e => setNewMedName(e.target.value)} placeholder="Remédio" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
+                  <input type="number" value={newMedStock} onChange={e => setNewMedStock(Number(e.target.value))} placeholder="ML" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
+                  <input type="number" value={newMedPrice} onChange={e => setNewMedPrice(Number(e.target.value))} placeholder="Preço/ML" className="p-4 bg-white rounded-xl text-xs font-bold border outline-none" />
                 </div>
                 <button onClick={() => {
                   const newMed: MedicineOption = { label: newMedName, value: newMedName.toLowerCase().replace(/\s/g, '_'), stockML: newMedStock, pricePerML: newMedPrice };
@@ -551,12 +538,12 @@ const App: React.FC = () => {
                   setPharmacyMedicines(up);
                   persistUnitData('pharmacy', up);
                   setNewMedName(''); setNewMedStock(0); setNewMedPrice(0);
-                }} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] shadow-lg">Cadastrar Medicamento</button>
+                }} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px]">Cadastrar Item</button>
               </div>
               <div className="space-y-2">
                 {pharmacyMedicines.map(m => (
                   <div key={m.value} className="flex justify-between items-center p-5 bg-white border rounded-3xl">
-                    <div><p className="text-sm font-black uppercase text-slate-800 leading-none mb-1">{m.label}</p><p className="text-[9px] font-bold text-slate-400">R$ {m.pricePerML.toFixed(2)}/mL</p></div>
+                    <div><p className="text-sm font-black uppercase text-slate-800 leading-none mb-1">{m.label}</p><p className="text-[9px] font-bold text-slate-400">Valor Unit: R$ {m.pricePerML.toFixed(2)}/mL</p></div>
                     <div className="text-right"><p className="text-lg font-black text-emerald-600 leading-none">{m.stockML} mL</p></div>
                   </div>
                 ))}
@@ -566,7 +553,7 @@ const App: React.FC = () => {
       )}
 
       <footer className="mt-12 py-10 text-slate-300 text-[9px] font-black uppercase tracking-[0.4em] text-center border-t border-slate-200 w-full max-w-7xl">
-        Boi Medicado Pro • Suporte Especializado • 2025
+        Boi Medicado Pro • Tecnologia para Sanidade Bovina • 2025
       </footer>
     </div>
   );
