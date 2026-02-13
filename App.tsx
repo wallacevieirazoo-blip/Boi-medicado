@@ -13,8 +13,19 @@ import {
   Calendar, Undo2, Loader2, ShieldCheck, Map, AlertTriangle
 } from 'lucide-react';
 
-// --- IMPORTS FIREBASE (V8/Compat) ---
+// --- IMPORTAÇÕES DO FIREBASE CORRIGIDAS (V9 MODULAR) ---
+// Note como importamos as funções individuais agora, não o objeto 'db' direto
 import { auth, db } from './firebaseConfig';
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut 
+} from 'firebase/auth';
+import { 
+  collection, doc, getDoc, onSnapshot, 
+  query, where, orderBy, limit, runTransaction, 
+  Timestamp 
+} from 'firebase/firestore';
 
 // --- COMPONENTE DE MODAL ---
 const ModalShell = ({ title, icon: Icon, onClose, children }: any) => (
@@ -64,40 +75,43 @@ const App: React.FC = () => {
 
   // Verificação de configuração inicial
   useEffect(() => {
-    // @ts-ignore - Acesso às opções do app
+    // @ts-ignore
     const isPlaceholder = auth.app.options.apiKey === "SUA_API_KEY_AQUI";
     if (isPlaceholder) setConfigError(true);
   }, []);
 
-  // --- MONITORAMENTO DE AUTH (Sintaxe V8) ---
+  // --- MONITORAMENTO DE AUTH (Sintaxe Modular) ---
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
         try {
-          const userDoc = await db.collection("users").doc(firebaseUser.uid).get();
+          // Correção: getDoc(doc(...)) em vez de db.collection(...).get()
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
           
-          if (userDoc.exists) {
+          if (userDoc.exists()) {
             const userData = userDoc.data() as User;
             setCurrentUser({ ...userData, id: firebaseUser.uid });
             
             if (userData.role === 'super_admin') {
               setActiveTab('units');
             } else {
-              const farmDoc = await db.collection("units").doc(userData.unitId).get();
-              if (farmDoc.exists) {
-                setFarmConfig({ farmName: farmDoc.data()?.name, unitId: userData.unitId });
+              const farmDocRef = doc(db, "units", userData.unitId);
+              const farmDoc = await getDoc(farmDocRef);
+              if (farmDoc.exists()) {
+                setFarmConfig({ farmName: farmDoc.data()!.name, unitId: userData.unitId });
               }
               setActiveTab('register');
             }
           } else {
-            setLoginError('Perfil não encontrado no Firestore. Contate o administrador.');
-            await auth.signOut();
+            setLoginError('Perfil não encontrado no Firestore.');
+            await signOut(auth);
             setCurrentUser(null);
           }
         } catch (error: any) {
           console.error("Erro ao buscar perfil:", error);
-          setLoginError(`Erro de conexão com o banco de dados: ${error.message}`);
+          setLoginError(`Erro de conexão: ${error.message}`);
           setCurrentUser(null);
         }
       } else {
@@ -109,32 +123,36 @@ const App: React.FC = () => {
     return unsubscribe;
   }, []);
 
-  // --- SINCRONIZAÇÃO EM TEMPO REAL (Sintaxe V8) ---
+  // --- SINCRONIZAÇÃO EM TEMPO REAL (Sintaxe Modular) ---
   useEffect(() => {
     if (!currentUser) return;
 
     if (currentUser.role === 'super_admin') {
-      const unsubUnits = db.collection("units").orderBy("createdAt", "desc").onSnapshot((snap) => {
+      // Correção: query(collection(...))
+      const qUnits = query(collection(db, "units"), orderBy("createdAt", "desc"));
+      const unsubUnits = onSnapshot(qUnits, (snap) => {
         setUnits(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as FarmUnit)));
       });
       return () => unsubUnits();
     }
 
     if (currentUser.unitId) {
-      const unsubRecords = db.collection("records")
-        .where("unitId", "==", currentUser.unitId)
-        .orderBy("timestamp", "desc")
-        .limit(100)
-        .onSnapshot((snap) => {
-          setRecords(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
-        });
+      const qRecords = query(
+        collection(db, "records"),
+        where("unitId", "==", currentUser.unitId),
+        orderBy("timestamp", "desc"),
+        limit(100)
+      );
+        
+      const unsubRecords = onSnapshot(qRecords, (snap) => {
+        setRecords(snap.docs.map((doc) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
+      });
 
-      const unsubPharmacy = db.collection("pharmacy")
-        .where("unitId", "==", currentUser.unitId)
-        .onSnapshot((snap) => {
-          const data = snap.docs.map((doc) => ({ ...doc.data() } as MedicineOption));
-          setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
-        });
+      const qPharmacy = query(collection(db, "pharmacy"), where("unitId", "==", currentUser.unitId));
+      const unsubPharmacy = onSnapshot(qPharmacy, (snap) => {
+        const data = snap.docs.map((doc) => ({ ...doc.data() } as MedicineOption));
+        setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
+      });
 
       return () => { unsubRecords(); unsubPharmacy(); };
     }
@@ -145,7 +163,8 @@ const App: React.FC = () => {
     setLoginError('');
     setActionLoading(true);
     try {
-      await auth.signInWithEmailAndPassword(loginEmail, loginPassword);
+      // Correção: signInWithEmailAndPassword(auth, ...)
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -158,7 +177,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => auth.signOut();
+  const handleLogout = () => signOut(auth);
 
   const handleRegisterTreatment = async () => {
     if (!currentUser || !farmConfig) return;
@@ -171,18 +190,19 @@ const App: React.FC = () => {
 
     setActionLoading(true);
     try {
-      await db.runTransaction(async (transaction) => {
+      // Correção: runTransaction(db, ...)
+      await runTransaction(db, async (transaction) => {
         const medEntries: MedicationEntry[] = [];
         for (const m of validMeds) {
           const medObj = pharmacyMedicines.find(p => p.label === m.medicine);
           if (!medObj) throw new Error(`Medicamento ${m.medicine} não encontrado.`);
           
-          const medRef = db.collection("pharmacy").doc(medObj.value);
+          const medRef = doc(db, "pharmacy", medObj.value);
           const medSnap = await transaction.get(medRef);
           
-          if (!medSnap.exists) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
+          if (!medSnap.exists()) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
           
-          const currentStock = medSnap.data()?.stockML;
+          const currentStock = medSnap.data()!.stockML;
           const dose = parseFloat(m.dosage);
           if (currentStock < dose) throw new Error(`Estoque insuficiente de ${m.medicine}.`);
           
@@ -190,13 +210,14 @@ const App: React.FC = () => {
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
         
-        // Criar referência para novo documento (ID automático)
-        const recordRef = db.collection("records").doc();
+        // Cria referência para novo documento
+        const recordRef = doc(collection(db, "records"));
         const recordData = {
           animalNumber, date, corral, diseases: [selectedDisease],
           medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
           type: 'treatment' as RecordType, unitId: currentUser.unitId
         };
+        
         transaction.set(recordRef, recordData);
       });
 
@@ -292,14 +313,14 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-2">
            <div className="hidden md:flex bg-slate-100 p-1 rounded-2xl">
-              {currentUser.role === 'super_admin' ? (
-                <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
-              ) : (
-                <>
-                  <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
-                  <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
-                </>
-              )}
+             {currentUser.role === 'super_admin' ? (
+               <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
+             ) : (
+               <>
+                 <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
+                 <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
+               </>
+             )}
            </div>
            <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"><LogOut className="w-5 h-5" /></button>
         </div>
@@ -371,8 +392,8 @@ const App: React.FC = () => {
                  <div className="space-y-4">
                     {pharmacyMedicines.slice(0, 5).map(m => (
                       <div key={m.value} className="flex justify-between items-center border-b border-white/10 pb-2">
-                         <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
-                         <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
+                          <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
+                          <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
                       </div>
                     ))}
                     <button onClick={() => setShowPharmacyManager(true)} className="w-full py-3 bg-white/10 rounded-xl text-[9px] font-black uppercase hover:bg-white/20 transition-all">Ver Inventário Completo</button>
