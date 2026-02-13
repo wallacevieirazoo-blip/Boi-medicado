@@ -10,7 +10,7 @@ import {
 } from './constants';
 import { 
   ClipboardCheck, X, Plus, Activity, LogOut, UserCircle, Users, 
-  Skull, CheckCircle2, Building2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine, Utensils, Undo2, Loader2
+  Skull, CheckCircle2, Building2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine, Utensils, Undo2, Loader2, ShieldCheck, Map
 } from 'lucide-react';
 
 // Firebase Imports
@@ -29,7 +29,6 @@ import {
   deleteDoc, 
   orderBy, 
   limit, 
-  Timestamp, 
   runTransaction 
 } from 'firebase/firestore';
 
@@ -58,15 +57,15 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // --- UNIT DATA (FIRESTORE) ---
+  // --- DATA STATE ---
   const [records, setRecords] = useState<CattleRecord[]>([]);
   const [pharmacyMedicines, setPharmacyMedicines] = useState<MedicineOption[]>([]);
   const [farmConfig, setFarmConfig] = useState<FarmConfig | null>(null);
+  const [units, setUnits] = useState<FarmUnit[]>([]);
 
   // --- UI STATE ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'register' | 'units'>('register');
   const [showPharmacyManager, setShowPharmacyManager] = useState(false);
-  const [showMovementModal, setShowMovementModal] = useState<{show: boolean, type: RecordType | null}>({show: false, type: null});
   
   // --- FORM STATE ---
   const [animalNumber, setAnimalNumber] = useState('');
@@ -95,7 +94,7 @@ const App: React.FC = () => {
             }
           }
         } catch (error) {
-          console.error("Firebase fetch error:", error);
+          console.error("Erro ao buscar perfil:", error);
         }
       } else {
         setCurrentUser(null);
@@ -108,8 +107,18 @@ const App: React.FC = () => {
 
   // --- SINCRONIZAÇÃO EM TEMPO REAL ---
   useEffect(() => {
-    if (!currentUser || currentUser.role === 'super_admin') return;
+    if (!currentUser) return;
 
+    // Se for Super Admin, carrega lista de unidades
+    if (currentUser.role === 'super_admin') {
+      const qUnits = query(collection(db, "units"), orderBy("createdAt", "desc"));
+      const unsubUnits = onSnapshot(qUnits, (snap) => {
+        setUnits(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as FarmUnit)));
+      });
+      return () => unsubUnits();
+    }
+
+    // Se for Usuário Comum, carrega dados da unidade dele
     const qRecords = query(
       collection(db, "records"), 
       where("unitId", "==", currentUser.unitId),
@@ -118,16 +127,12 @@ const App: React.FC = () => {
     );
     const unsubRecords = onSnapshot(qRecords, (snap) => {
       setRecords(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as CattleRecord)));
-    }, (error) => {
-      console.error("Records snapshot error:", error);
     });
 
     const qPharmacy = query(collection(db, "pharmacy"), where("unitId", "==", currentUser.unitId));
     const unsubPharmacy = onSnapshot(qPharmacy, (snap) => {
       const data = snap.docs.map(doc => ({ ...doc.data() } as MedicineOption));
       setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
-    }, (error) => {
-      console.error("Pharmacy snapshot error:", error);
     });
 
     return () => { unsubRecords(); unsubPharmacy(); };
@@ -148,11 +153,8 @@ const App: React.FC = () => {
 
   const handleLogout = () => signOut(auth);
 
-  // --- REFINAMENTO handleRegisterTreatment COM TRANSACTION ---
   const handleRegisterTreatment = async () => {
     if (!currentUser || !farmConfig) return;
-    
-    // 1. Validação de campos
     if (!animalNumber.trim()) return alert('Informe o número do brinco.');
     if (!corral) return alert('Selecione o curral/lote.');
     if (!selectedDisease) return alert('Informe a enfermidade.');
@@ -164,55 +166,30 @@ const App: React.FC = () => {
     try {
       await runTransaction(db, async (transaction) => {
         const medEntries: MedicationEntry[] = [];
-        
-        // 2. Verificar estoque e preparar débitos para cada medicamento
         for (const m of validMeds) {
           const medObj = pharmacyMedicines.find(p => p.label === m.medicine);
           if (!medObj) throw new Error(`Medicamento ${m.medicine} não encontrado.`);
-          
           const medRef = doc(db, "pharmacy", medObj.value);
           const medSnap = await transaction.get(medRef);
-          
           if (!medSnap.exists()) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
-          
           const currentStock = medSnap.data().stockML;
           const dose = parseFloat(m.dosage);
-          
-          if (currentStock < dose) {
-            throw new Error(`Estoque insuficiente de ${m.medicine}. Disponível: ${currentStock}mL`);
-          }
-
-          // Atualiza estoque atômico
+          if (currentStock < dose) throw new Error(`Estoque insuficiente de ${m.medicine}.`);
           transaction.update(medRef, { stockML: currentStock - dose });
-          
-          medEntries.push({ 
-            medicine: m.medicine, 
-            dosage: dose, 
-            cost: dose * (medObj.pricePerML || 0) 
-          });
+          medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
-
-        // 3. Salvar o registro final
         const recordRef = doc(collection(db, "records"));
         transaction.set(recordRef, {
-          animalNumber,
-          date,
-          corral,
-          diseases: [selectedDisease],
-          medications: medEntries,
-          timestamp: Date.now(),
-          registeredBy: currentUser.name,
-          type: 'treatment' as RecordType,
-          unitId: currentUser.unitId
+          animalNumber, date, corral, diseases: [selectedDisease],
+          medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
+          type: 'treatment' as RecordType, unitId: currentUser.unitId
         });
       });
-
-      alert('Registro salvo e estoque atualizado!');
+      alert('Registro salvo!');
       setAnimalNumber('');
       setMedications(Array(6).fill({ medicine: '', dosage: '' }));
       setSelectedDisease('');
     } catch (err: any) {
-      console.error(err);
       alert(err.message || 'Erro ao processar tratamento.');
     } finally {
       setActionLoading(false);
@@ -235,25 +212,25 @@ const App: React.FC = () => {
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a1a14] text-emerald-500">
       <Loader2 className="w-12 h-12 animate-spin mb-4" />
-      <span className="font-black uppercase tracking-widest text-xs">Sincronizando Dados...</span>
+      <span className="font-black uppercase tracking-widest text-xs">Acessando Cloud...</span>
     </div>
   );
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen relative flex flex-col items-center justify-center p-4 bg-[#0a1a14]">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[#0a1a14]">
         <div className="w-full max-w-sm bg-white p-10 rounded-[3rem] shadow-2xl">
           <div className="text-center mb-10">
             <div className="inline-block p-5 bg-emerald-50 rounded-[2rem] mb-4"><Building2 className="w-12 h-12 text-emerald-600" /></div>
             <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter leading-none">Boi Medicado</h1>
-            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Acesso Restrito</p>
+            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Painel de Acesso</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
-            <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="E-mail Corporativo" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all" />
+            <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="E-mail" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all" />
             <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Senha" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all" />
             {loginError && <p className="text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-xl">{loginError}</p>}
             <button disabled={actionLoading} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2">
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar no Sistema'}
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar'}
             </button>
           </form>
         </div>
@@ -265,22 +242,69 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col items-center p-4 md:p-8">
       <header className="w-full max-w-7xl mb-6 flex items-center justify-between bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-100">
         <div className="flex items-center gap-4">
-          <div className="p-3 bg-emerald-500 rounded-2xl text-white shadow-lg"><Building2 className="w-6 h-6" /></div>
+          <div className={`p-3 rounded-2xl text-white shadow-lg ${currentUser.role === 'super_admin' ? 'bg-indigo-600' : 'bg-emerald-500'}`}>
+            {currentUser.role === 'super_admin' ? <ShieldCheck className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+          </div>
           <div>
-            <h1 className="text-xl font-black text-slate-800 uppercase leading-none truncate max-w-[150px] md:max-w-none">{farmConfig?.farmName}</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Olá, <span className="text-emerald-600 font-black">{currentUser.name.split(' ')[0]}</span></p>
+            <h1 className="text-xl font-black text-slate-800 uppercase leading-none truncate max-w-[150px] md:max-w-none">
+              {currentUser.role === 'super_admin' ? 'Painel Administrativo' : farmConfig?.farmName}
+            </h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
+              {currentUser.role === 'super_admin' ? 'SUPER ADMIN' : `Operador: ${currentUser.name}`}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
            <div className="hidden md:flex bg-slate-100 p-1 rounded-2xl">
-              <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
-              <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
+              {currentUser.role === 'super_admin' ? (
+                <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
+              ) : (
+                <>
+                  <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
+                  <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
+                </>
+              )}
            </div>
            <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"><LogOut className="w-5 h-5" /></button>
         </div>
       </header>
 
-      {activeTab === 'dashboard' ? (
+      {activeTab === 'units' && currentUser.role === 'super_admin' ? (
+        <main className="w-full max-w-7xl">
+          <div className="bg-white rounded-[3rem] shadow-2xl p-10 border border-slate-100">
+            <div className="flex items-center justify-between mb-10">
+               <div className="flex items-center gap-4">
+                  <div className="p-4 bg-indigo-50 rounded-3xl text-indigo-600"><Map className="w-8 h-8" /></div>
+                  <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">Gestão de Fazendas</h2>
+               </div>
+               <button className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg flex items-center gap-3"><Plus className="w-5 h-5" /> Nova Unidade</button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {units.map(unit => (
+                 <div key={unit.id} className="p-8 bg-slate-50 rounded-[2.5rem] border hover:border-indigo-500 transition-all group">
+                    <div className="flex justify-between items-start mb-6">
+                       <div className="p-3 bg-white rounded-2xl shadow-sm text-slate-400 group-hover:text-indigo-600 transition-colors"><Building2 className="w-6 h-6" /></div>
+                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${unit.active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                         {unit.active ? 'Ativa' : 'Expirada'}
+                       </span>
+                    </div>
+                    <h3 className="text-lg font-black text-slate-800 uppercase mb-1">{unit.name}</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-6">ID: {unit.id}</p>
+                    <div className="flex gap-2">
+                       <button className="flex-1 py-3 bg-white rounded-xl text-[9px] font-black uppercase border hover:bg-indigo-50 transition-colors">Configurar</button>
+                       <button className="p-3 bg-white rounded-xl border hover:bg-red-50 transition-colors"><X className="w-4 h-4 text-slate-400 hover:text-red-500" /></button>
+                    </div>
+                 </div>
+               ))}
+               {units.length === 0 && (
+                 <div className="col-span-full py-20 text-center">
+                    <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">Nenhuma unidade sincronizada.</p>
+                 </div>
+               )}
+            </div>
+          </div>
+        </main>
+      ) : activeTab === 'dashboard' ? (
         <main className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-8">
            <div className="lg:col-span-9 bg-white rounded-[3rem] shadow-2xl p-8 border border-slate-100 overflow-x-auto">
              <div className="flex items-center gap-3 mb-8"><BarChart3 className="w-6 h-6 text-emerald-600" /><h2 className="text-xl font-black text-slate-800 uppercase leading-none">Relatórios Cloud</h2></div>
@@ -361,14 +385,14 @@ const App: React.FC = () => {
           <aside className="lg:col-span-4 space-y-6">
             <div className="bg-slate-900 text-white rounded-[3rem] p-8 shadow-2xl space-y-4">
                <h3 className="text-xs font-black opacity-40 uppercase tracking-widest mb-2">Ações Rápidas</h3>
-               <button onClick={() => setShowMovementModal({show: true, type: 'death'})} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 hover:bg-red-700 transition-all shadow-lg"><Skull className="w-5 h-5" /> Registrar Morte</button>
-               <button onClick={() => setShowMovementModal({show: true, type: 'return_to_pasture'})} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 hover:bg-amber-700 transition-all shadow-lg"><Undo2 className="w-5 h-5" /> Retorno ao Pasto</button>
+               <button className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 hover:bg-red-700 transition-all shadow-lg"><Skull className="w-5 h-5" /> Registrar Morte</button>
+               <button className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-xs flex items-center justify-center gap-3 hover:bg-amber-700 transition-all shadow-lg"><Undo2 className="w-5 h-5" /> Retorno ao Pasto</button>
             </div>
             <div className="bg-white rounded-[3rem] p-8 shadow-xl border border-slate-100 flex items-center gap-4 text-emerald-600">
                <div className="p-3 bg-emerald-50 rounded-2xl"><Calendar className="w-6 h-6" /></div>
                <div>
                   <span className="font-black uppercase tracking-tighter text-sm block">Modo Offline Ativo</span>
-                  <span className="text-[8px] font-bold uppercase text-slate-400">Dados salvos localmente até detectar sinal</span>
+                  <span className="text-[8px] font-bold uppercase text-slate-400">Dados salvos localmente</span>
                </div>
             </div>
           </aside>

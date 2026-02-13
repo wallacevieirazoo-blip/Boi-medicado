@@ -18,13 +18,13 @@ const firebaseConfig = {
   appId: "SEU_APP_ID"
 };
 
-// Standard initialization
+// Standard initialization for Firebase v9+ modular SDK
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with persistent cache if supported
-// Using initializeFirestore allows setting up the cache mechanism
 let db;
 try {
+  // Using initializeFirestore allows setting up the cache mechanism in modular SDK
   db = initializeFirestore(app, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
   });
