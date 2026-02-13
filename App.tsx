@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CattleRecord, MedicationEntry, MedicineOption, 
@@ -14,9 +13,8 @@ import {
   Calendar, Undo2, Loader2, ShieldCheck, Map, AlertTriangle
 } from 'lucide-react';
 
-// --- IMPORTAÇÕES DO FIREBASE CORRIGIDAS (V8/COMPAT NAMESPACED) ---
+// --- IMPORTS FIREBASE (V8/Compat) ---
 import { auth, db } from './firebaseConfig';
-import firebase from 'firebase/app';
 
 // --- COMPONENTE DE MODAL ---
 const ModalShell = ({ title, icon: Icon, onClose, children }: any) => (
@@ -66,12 +64,12 @@ const App: React.FC = () => {
 
   // Verificação de configuração inicial
   useEffect(() => {
-    // @ts-ignore
+    // @ts-ignore - Acesso às opções do app
     const isPlaceholder = auth.app.options.apiKey === "SUA_API_KEY_AQUI";
     if (isPlaceholder) setConfigError(true);
   }, []);
 
-  // --- MONITORAMENTO DE AUTH (Sintaxe Namespaced) ---
+  // --- MONITORAMENTO DE AUTH (Sintaxe V8) ---
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setLoading(true);
@@ -88,19 +86,18 @@ const App: React.FC = () => {
             } else {
               const farmDoc = await db.collection("units").doc(userData.unitId).get();
               if (farmDoc.exists) {
-                // @ts-ignore
-                setFarmConfig({ farmName: farmDoc.data().name, unitId: userData.unitId });
+                setFarmConfig({ farmName: farmDoc.data()?.name, unitId: userData.unitId });
               }
               setActiveTab('register');
             }
           } else {
-            setLoginError('Perfil não encontrado no Firestore.');
+            setLoginError('Perfil não encontrado no Firestore. Contate o administrador.');
             await auth.signOut();
             setCurrentUser(null);
           }
         } catch (error: any) {
           console.error("Erro ao buscar perfil:", error);
-          setLoginError(`Erro de conexão: ${error.message}`);
+          setLoginError(`Erro de conexão com o banco de dados: ${error.message}`);
           setCurrentUser(null);
         }
       } else {
@@ -112,7 +109,7 @@ const App: React.FC = () => {
     return unsubscribe;
   }, []);
 
-  // --- SINCRONIZAÇÃO EM TEMPO REAL (Sintaxe Namespaced) ---
+  // --- SINCRONIZAÇÃO EM TEMPO REAL (Sintaxe V8) ---
   useEffect(() => {
     if (!currentUser) return;
 
@@ -185,8 +182,7 @@ const App: React.FC = () => {
           
           if (!medSnap.exists) throw new Error(`Dados de estoque para ${m.medicine} indisponíveis.`);
           
-          // @ts-ignore
-          const currentStock = medSnap.data().stockML;
+          const currentStock = medSnap.data()?.stockML;
           const dose = parseFloat(m.dosage);
           if (currentStock < dose) throw new Error(`Estoque insuficiente de ${m.medicine}.`);
           
@@ -194,14 +190,13 @@ const App: React.FC = () => {
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
         
-        // Cria referência para novo documento
+        // Criar referência para novo documento (ID automático)
         const recordRef = db.collection("records").doc();
         const recordData = {
           animalNumber, date, corral, diseases: [selectedDisease],
           medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
           type: 'treatment' as RecordType, unitId: currentUser.unitId
         };
-        
         transaction.set(recordRef, recordData);
       });
 
@@ -297,14 +292,14 @@ const App: React.FC = () => {
         </div>
         <div className="flex gap-2">
            <div className="hidden md:flex bg-slate-100 p-1 rounded-2xl">
-             {currentUser.role === 'super_admin' ? (
-               <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
-             ) : (
-               <>
-                 <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
-                 <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
-               </>
-             )}
+              {currentUser.role === 'super_admin' ? (
+                <button onClick={() => setActiveTab('units')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'units' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'}`}>Unidades</button>
+              ) : (
+                <>
+                  <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Painel</button>
+                  <button onClick={() => setActiveTab('register')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${activeTab === 'register' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Manejo</button>
+                </>
+              )}
            </div>
            <button onClick={handleLogout} className="p-3 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-all"><LogOut className="w-5 h-5" /></button>
         </div>
@@ -376,8 +371,8 @@ const App: React.FC = () => {
                  <div className="space-y-4">
                     {pharmacyMedicines.slice(0, 5).map(m => (
                       <div key={m.value} className="flex justify-between items-center border-b border-white/10 pb-2">
-                          <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
-                          <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
+                         <span className="text-[10px] font-bold uppercase truncate max-w-[120px]">{m.label}</span>
+                         <span className={`text-[11px] font-black ${m.stockML < 100 ? 'text-red-400' : 'text-emerald-400'}`}>{m.stockML} mL</span>
                       </div>
                     ))}
                     <button onClick={() => setShowPharmacyManager(true)} className="w-full py-3 bg-white/10 rounded-xl text-[9px] font-black uppercase hover:bg-white/20 transition-all">Ver Inventário Completo</button>

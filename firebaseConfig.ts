@@ -1,24 +1,41 @@
+// --- IMPORTAÇÕES CERTAS (V9) ---
 
-import firebase from "firebase/app";
-import "firebase/auth";
-import "firebase/firestore";
+import { initializeApp } from "firebase/app";
 
-// Substitua pelas suas credenciais do console do Firebase
+import { getFirestore } from "firebase/firestore";
+
+import { getAuth } from "firebase/auth";
+
+
+
+// Suas chaves do Firebase (O App usa essas variáveis para conectar)
+
 const firebaseConfig = {
-  apiKey: "SUA_API_KEY_AQUI",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+
+  apiKey: "AIzaSyAsFWNokJfTXd85gi2YPrtNF4MHC6ppb1Q", // <--- IMPORTANTE: Verifique se sua chave está aqui
+
+  authDomain: "boi-medicado.firebaseapp.com",
+
+  projectId: "boi-medicado",
+
+  storageBucket: "boi-medicado.appspot.com",
+
+  messagingSenderId: "739691554979",
+
+  appId: "1:739691554979:web:c2e315e4c4a096abe3b716"
+
 };
 
-// Initialize Firebase (Namespaced/Compat SDK)
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
 
-const db = firebase.firestore();
-const auth = firebase.auth();
 
-export { db, auth };
+// Inicializa o Firebase
+
+const app = initializeApp(firebaseConfig);
+
+
+
+// Exporta as ferramentas para o resto do app usar
+
+export const db = getFirestore(app);
+
+export const auth = getAuth(app);
