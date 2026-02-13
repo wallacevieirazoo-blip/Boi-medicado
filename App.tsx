@@ -10,27 +10,19 @@ import {
 } from './constants';
 import { 
   ClipboardCheck, X, Plus, Activity, LogOut, UserCircle, Users, 
-  Skull, CheckCircle2, Building2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine, Utensils, Undo2, Loader2, ShieldCheck, Map
+  Skull, CheckCircle2, Building2, Package, BarChart3, Settings, Globe, Eye, EyeOff, Calendar, Edit2, Save, ArrowDownToLine, Utensils, Undo2, Loader2, ShieldCheck, Map, AlertTriangle, BrainCircuit
 } from 'lucide-react';
+import { getTreatmentInsight } from './geminiService';
 
 // Firebase Imports
 import { auth, db } from './firebaseConfig';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  deleteDoc, 
-  orderBy, 
-  limit, 
-  runTransaction 
-} from 'firebase/firestore';
+import * as firestore from 'firebase/firestore';
+
+// Destructure from firestore namespace to avoid "no exported member" errors in some environments
+const { 
+  collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDoc, setDoc, deleteDoc, orderBy, limit, runTransaction 
+} = firestore as any;
 
 // --- COMPONENTE DE MODAL ---
 const ModalShell = ({ title, icon: Icon, onClose, children }: any) => (
@@ -56,12 +48,14 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [configError, setConfigError] = useState(false);
 
   // --- DATA STATE ---
   const [records, setRecords] = useState<CattleRecord[]>([]);
   const [pharmacyMedicines, setPharmacyMedicines] = useState<MedicineOption[]>([]);
   const [farmConfig, setFarmConfig] = useState<FarmConfig | null>(null);
   const [units, setUnits] = useState<FarmUnit[]>([]);
+  const [lastInsight, setLastInsight] = useState<string | null>(null);
 
   // --- UI STATE ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'register' | 'units'>('register');
@@ -72,11 +66,22 @@ const App: React.FC = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [corral, setCorral] = useState('');
   const [selectedDisease, setSelectedDisease] = useState('');
-  const [medications, setMedications] = useState<{medicine: string, dosage: string}[]>(Array(6).fill({ medicine: '', dosage: '' }));
+  // Corrected initialization to avoid shared object references
+  const [medications, setMedications] = useState<{medicine: string, dosage: string}[]>(
+    Array.from({ length: 6 }, () => ({ medicine: '', dosage: '' }))
+  );
+
+  // Verificação de configuração inicial
+  useEffect(() => {
+    // @ts-ignore - Acesso às configurações brutas para verificação
+    const isPlaceholder = auth.app.options.apiKey === "SUA_API_KEY_AQUI";
+    if (isPlaceholder) setConfigError(true);
+  }, []);
 
   // --- MONITORAMENTO DE AUTH ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
       if (firebaseUser) {
         try {
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
@@ -91,10 +96,17 @@ const App: React.FC = () => {
               if (farmDoc.exists()) {
                 setFarmConfig({ farmName: farmDoc.data().name, unitId: userData.unitId });
               }
+              setActiveTab('register');
             }
+          } else {
+            setLoginError('Perfil não encontrado no Firestore. Contate o administrador.');
+            await signOut(auth);
+            setCurrentUser(null);
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error("Erro ao buscar perfil:", error);
+          setLoginError(`Erro de conexão com o banco de dados: ${error.message}`);
+          setCurrentUser(null);
         }
       } else {
         setCurrentUser(null);
@@ -109,33 +121,33 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Se for Super Admin, carrega lista de unidades
     if (currentUser.role === 'super_admin') {
       const qUnits = query(collection(db, "units"), orderBy("createdAt", "desc"));
-      const unsubUnits = onSnapshot(qUnits, (snap) => {
-        setUnits(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as FarmUnit)));
+      const unsubUnits = onSnapshot(qUnits, (snap: any) => {
+        setUnits(snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as FarmUnit)));
       });
       return () => unsubUnits();
     }
 
-    // Se for Usuário Comum, carrega dados da unidade dele
-    const qRecords = query(
-      collection(db, "records"), 
-      where("unitId", "==", currentUser.unitId),
-      orderBy("timestamp", "desc"),
-      limit(100)
-    );
-    const unsubRecords = onSnapshot(qRecords, (snap) => {
-      setRecords(snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as CattleRecord)));
-    });
+    if (currentUser.unitId) {
+      const qRecords = query(
+        collection(db, "records"), 
+        where("unitId", "==", currentUser.unitId),
+        orderBy("timestamp", "desc"),
+        limit(100)
+      );
+      const unsubRecords = onSnapshot(qRecords, (snap: any) => {
+        setRecords(snap.docs.map((doc: any) => ({ ...doc.data(), id: doc.id } as CattleRecord)));
+      });
 
-    const qPharmacy = query(collection(db, "pharmacy"), where("unitId", "==", currentUser.unitId));
-    const unsubPharmacy = onSnapshot(qPharmacy, (snap) => {
-      const data = snap.docs.map(doc => ({ ...doc.data() } as MedicineOption));
-      setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
-    });
+      const qPharmacy = query(collection(db, "pharmacy"), where("unitId", "==", currentUser.unitId));
+      const unsubPharmacy = onSnapshot(qPharmacy, (snap: any) => {
+        const data = snap.docs.map((doc: any) => ({ ...doc.data() } as MedicineOption));
+        setPharmacyMedicines(data.length > 0 ? data : DEFAULT_MEDICINES);
+      });
 
-    return () => { unsubRecords(); unsubPharmacy(); };
+      return () => { unsubRecords(); unsubPharmacy(); };
+    }
   }, [currentUser]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -145,7 +157,12 @@ const App: React.FC = () => {
     try {
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (err: any) {
-      setLoginError('Acesso negado. Verifique os dados.');
+      console.error(err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setLoginError('E-mail ou senha incorretos.');
+      } else {
+        setLoginError(`Erro ao entrar: ${err.message}`);
+      }
     } finally {
       setActionLoading(false);
     }
@@ -164,7 +181,9 @@ const App: React.FC = () => {
 
     setActionLoading(true);
     try {
-      await runTransaction(db, async (transaction) => {
+      let finalRecord: CattleRecord | null = null;
+
+      await runTransaction(db, async (transaction: any) => {
         const medEntries: MedicationEntry[] = [];
         for (const m of validMeds) {
           const medObj = pharmacyMedicines.find(p => p.label === m.medicine);
@@ -179,15 +198,26 @@ const App: React.FC = () => {
           medEntries.push({ medicine: m.medicine, dosage: dose, cost: dose * (medObj.pricePerML || 0) });
         }
         const recordRef = doc(collection(db, "records"));
-        transaction.set(recordRef, {
+        const recordData = {
           animalNumber, date, corral, diseases: [selectedDisease],
           medications: medEntries, timestamp: Date.now(), registeredBy: currentUser.name,
           type: 'treatment' as RecordType, unitId: currentUser.unitId
-        });
+        };
+        transaction.set(recordRef, recordData);
+        finalRecord = { ...recordData, id: recordRef.id, synced: true } as CattleRecord;
       });
+
       alert('Registro salvo!');
+      
+      // Call Gemini for veterinary insight after successful save
+      if (finalRecord) {
+        setLastInsight("Analisando tratamento com IA...");
+        const insight = await getTreatmentInsight(finalRecord);
+        setLastInsight(insight);
+      }
+
       setAnimalNumber('');
-      setMedications(Array(6).fill({ medicine: '', dosage: '' }));
+      setMedications(Array.from({ length: 6 }, () => ({ medicine: '', dosage: '' })));
       setSelectedDisease('');
     } catch (err: any) {
       alert(err.message || 'Erro ao processar tratamento.');
@@ -212,7 +242,7 @@ const App: React.FC = () => {
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#0a1a14] text-emerald-500">
       <Loader2 className="w-12 h-12 animate-spin mb-4" />
-      <span className="font-black uppercase tracking-widest text-xs">Acessando Cloud...</span>
+      <span className="font-black uppercase tracking-widest text-[10px]">Autenticando na Nuvem...</span>
     </div>
   );
 
@@ -223,16 +253,36 @@ const App: React.FC = () => {
           <div className="text-center mb-10">
             <div className="inline-block p-5 bg-emerald-50 rounded-[2rem] mb-4"><Building2 className="w-12 h-12 text-emerald-600" /></div>
             <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter leading-none">Boi Medicado</h1>
-            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Painel de Acesso</p>
+            <p className="text-[10px] font-black uppercase text-slate-400 mt-2 tracking-widest">Controle Sanitário</p>
           </div>
+          
+          {configError && (
+            <div className="mb-6 p-4 bg-amber-50 rounded-2xl border border-amber-200 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              <p className="text-[10px] font-bold text-amber-800 uppercase leading-tight">Atenção: Configure suas chaves do Firebase no arquivo firebaseConfig.ts</p>
+            </div>
+          )}
+
           <form onSubmit={handleLogin} className="space-y-4">
-            <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="E-mail" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all" />
-            <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Senha" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all" />
-            {loginError && <p className="text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-xl">{loginError}</p>}
-            <button disabled={actionLoading} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2">
-              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entrar'}
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase text-slate-400 ml-4 tracking-widest">E-mail Corporativo</label>
+              <input type="email" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="usuario@email.com" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all placeholder:text-slate-300" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-black uppercase text-slate-400 ml-4 tracking-widest">Sua Senha</label>
+              <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-slate-900 outline-none focus:ring-2 ring-emerald-500 transition-all placeholder:text-slate-300" />
+            </div>
+            {loginError && (
+              <div className="p-4 bg-red-50 rounded-xl border border-red-100">
+                <p className="text-center text-red-600 font-black text-[9px] uppercase leading-tight">{loginError}</p>
+              </div>
+            )}
+            <button disabled={actionLoading || configError} className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+              {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Acessar Sistema'}
             </button>
           </form>
+          
+          <p className="mt-8 text-center text-[9px] font-bold text-slate-300 uppercase tracking-widest">Versão Cloud 2025.01</p>
         </div>
       </div>
     );
@@ -247,10 +297,10 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-xl font-black text-slate-800 uppercase leading-none truncate max-w-[150px] md:max-w-none">
-              {currentUser.role === 'super_admin' ? 'Painel Administrativo' : farmConfig?.farmName}
+              {currentUser.role === 'super_admin' ? 'Painel Administrativo' : farmConfig?.farmName || 'Unidade não Vinculada'}
             </h1>
             <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
-              {currentUser.role === 'super_admin' ? 'SUPER ADMIN' : `Operador: ${currentUser.name}`}
+              {currentUser.role === 'super_admin' ? 'Acesso Total' : `${currentUser.role}: ${currentUser.name}`}
             </p>
           </div>
         </div>
@@ -368,13 +418,24 @@ const App: React.FC = () => {
                 <div className="space-y-2">
                   {medications.map((med, idx) => (
                     <div key={idx} className="flex gap-2">
-                      <select value={med.medicine} onChange={e => { const up = [...medications]; up[idx].medicine = e.target.value; setMedications(up); }} className="flex-grow px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold border-none outline-none"><option value="">Remédio</option>{pharmacyMedicines.map(m => <option key={m.value} value={m.label}>{m.label}</option>)}</select>
-                      <input type="number" placeholder="mL" value={med.dosage} onChange={e => { const up = [...medications]; up[idx].dosage = e.target.value; setMedications(up); }} className="w-16 px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold text-center border-none outline-none" />
+                      <select value={med.medicine} onChange={e => { const up = [...medications]; up[idx] = { ...up[idx], medicine: e.target.value }; setMedications(up); }} className="flex-grow px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold border-none outline-none"><option value="">Remédio</option>{pharmacyMedicines.map(m => <option key={m.value} value={m.label}>{m.label}</option>)}</select>
+                      <input type="number" placeholder="mL" value={med.dosage} onChange={e => { const up = [...medications]; up[idx] = { ...up[idx], dosage: e.target.value }; setMedications(up); }} className="w-16 px-3 py-3 bg-slate-50 rounded-xl text-[10px] font-bold text-center border-none outline-none" />
                     </div>
                   ))}
                 </div>
               </div>
             </div>
+
+            {lastInsight && (
+              <div className="mt-8 p-6 bg-indigo-50 rounded-[2rem] border border-indigo-100 flex gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="p-3 bg-white rounded-2xl h-fit text-indigo-600 shadow-sm"><BrainCircuit className="w-6 h-6" /></div>
+                <div>
+                  <h4 className="text-[10px] font-black uppercase text-indigo-400 mb-1 tracking-widest">IA Veterinária Gemini 3</h4>
+                  <p className="text-sm font-bold text-indigo-900 leading-relaxed italic">"{lastInsight}"</p>
+                </div>
+              </div>
+            )}
+
             <div className="mt-8 pt-6 border-t">
               <button disabled={actionLoading} onClick={handleRegisterTreatment} className="w-full py-5 bg-emerald-600 text-white rounded-[2rem] font-black uppercase text-sm shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
                 {actionLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <><CheckCircle2 className="w-6 h-6" /> Sincronizar Ficha Animal</>}

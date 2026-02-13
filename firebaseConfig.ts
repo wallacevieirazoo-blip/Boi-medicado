@@ -1,12 +1,15 @@
 
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { 
+import * as firestore from "firebase/firestore";
+
+// Destructure from firestore namespace to avoid "no exported member" errors in some environments
+const { 
   getFirestore, 
   initializeFirestore, 
   persistentLocalCache, 
   persistentMultipleTabManager 
-} from "firebase/firestore";
+} = firestore as any;
 
 // Substitua pelas suas credenciais do console do Firebase
 const firebaseConfig = {
