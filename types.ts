@@ -1,14 +1,16 @@
 
 export interface MedicationEntry {
   medicine: string;
-  dosage: string;
+  dosage: number;
+  cost?: number;
 }
 
-export type RecordType = 'treatment' | 'death';
+export type RecordType = 'treatment' | 'death' | 'entry' | 'slaughter' | 'return_to_pasture' | 'butcher';
 
 export interface CattleRecord {
   id: string;
-  animalNumber: string;
+  animalNumber?: string;
+  quantity?: number;
   date: string;
   corral: string;
   diseases: string[];
@@ -16,7 +18,7 @@ export interface CattleRecord {
   timestamp: number;
   registeredBy: string;
   synced: boolean;
-  type: RecordType; // 'treatment' ou 'death'
+  type: RecordType;
 }
 
 export interface DiseaseOption {
@@ -27,6 +29,8 @@ export interface DiseaseOption {
 export interface MedicineOption {
   label: string;
   value: string;
+  stockML: number;
+  pricePerML: number;
 }
 
 export interface CorralOption {
@@ -40,11 +44,26 @@ export interface Treatment {
   medicines: string[];
 }
 
-export type UserRole = 'manager' | 'operator';
+export type UserRole = 'super_admin' | 'manager' | 'operator';
 
 export interface User {
   id: string;
   name: string;
   username: string;
   role: UserRole;
+  unitId: string;
+}
+
+export interface FarmUnit {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: number;
+  expiresAt: number; // Timestamp de expiração
+}
+
+export interface FarmConfig {
+  farmName: string;
+  unitId: string;
+  initialStock?: number;
 }
